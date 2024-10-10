@@ -1,0 +1,137 @@
+Public Sub ShowFileSelectionForm()
+    UserForm1.Show
+End Sub
+
+Public Sub UploadFileAndTriggerETL(filePath As String)
+    ' Declare variables
+    Dim http As Object, json As Object
+    Dim bucketName As String, fileName As String, fileStream As Object
+    Dim cloudFunctionUrl As String, cloudRunUrl As String, APIUrl As String
+    Dim jsonResponse As String, accessToken As String
+    Dim userId As String, csvData As String
+    Dim sheetName As Variant
+
+    ' Set the parameters
+    cloudStorageBucketName = "excel_python"
+    cloudTokenFunctionUrl = "https://financeexcel-163924279121.us-central1.run.app/token"
+    cloudRunFunctionUrl = "https://financeexcel-163924279121.us-central1.run.app/"
+    filePath = filePath
+    fileName = Dir(filePath)
+    userId = "tomasz.dudzik@googlemail.com"
+    bucketName = "excel_python"
+
+    ' Initialize the required objects
+    Set http = CreateObject("MSXML2.XMLHTTP")
+    Set fileStream = CreateObject("ADODB.Stream")
+
+    ' GET TOKEN
+    ' Prepare JSON payload with relevant information
+    Dim jsonPayload As String
+    jsonPayload = "{""user_id"":""" & userId & """}"
+
+    ' Send request to Cloud Function
+    http.Open "POST", cloudTokenFunctionUrl, False
+    http.setRequestHeader "Content-Type", "application/json"
+    http.Send jsonPayload
+
+    ' Check token from Cloud Function
+    If http.Status = 200 Then
+        accessToken = http.responseText
+    Else
+        MsgBox "Error generating token or checking subscription: " & http.Status & " - " & http.responseText
+    End If
+
+    ' UPLOAD THE FILE TO THE CLOUD STORAGE
+    ' Google Cloud Storage API URL for uploading a file to a specific bucket
+    APIUrl = "https://storage.googleapis.com/upload/storage/v1/b/" & bucketName & "/o?uploadType=media&name=" & fileName
+
+    ' Open the file as a binary stream
+    fileStream.Type = 1 ' Binary
+    fileStream.Open
+    fileStream.LoadFromFile filePath
+
+    ' Upload file to Google Cloud Storage
+    http.Open "POST", APIUrl, False
+    http.setRequestHeader "Authorization", "Bearer " & accessToken
+    http.setRequestHeader "Content-Type", "application/octet-stream"
+    http.Send fileStream.Read
+
+    ' LOAD TRANSFORMED FILE BACK TO EXCEL
+    ' Check if the file was uploaded successfully
+    If http.Status = 200 Or http.Status = 201 Then
+        ' Trigger the Cloud Run service
+        Set http = CreateObject("MSXML2.XMLHTTP")
+
+        http.Open "POST", cloudRunFunctionUrl, False
+        http.setRequestHeader "Content-Type", "application/json"
+        
+        ' Prepare JSON payload with relevant information about the uploaded file
+        jsonPayload = "{""bucket_name"":""" & bucketName & """, ""file_name"":""" & fileName & """}"
+
+        ' Send request to Cloud Run
+        http.Send jsonPayload
+
+        ' Check response from FastAPI
+        If http.Status = 200 Then
+            ' Get the JSON response
+            jsonResponse = http.responseText
+            ' Parse the JSON response to get the CSV data
+            WriteCSVToExcel jsonResponse
+        Else
+            MsgBox "Error triggering ETL process: " & http.Status & " - " & http.responseText
+        End If
+    Else
+        MsgBox "Error uploading file: " & http.Status & " - " & http.responseText
+    End If
+    
+            ' Check response from FastAPI
+        If http.Status = 200 Then
+
+        Else
+            MsgBox "Error triggering ETL process: " & http.Status & " - " & http.responseText
+        End If
+    
+
+    ' Clean up
+    fileStream.Close
+    Set fileStream = Nothing
+    Set http = Nothing
+    
+End Sub
+
+' Function to write the CSV data to Excel
+Sub WriteCSVToExcel(ByVal csvData As String)
+    Dim lines As Variant
+    Dim i As Integer, j As Integer
+    Dim line As String
+    Dim cells As Variant
+    Dim ws As Worksheet
+
+    ' Create or get the worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets(sheetName)
+    If ws Is Nothing Then
+        Set ws = ThisWorkbook.Sheets.Add
+        ws.Name = sheetName
+    End If
+    On Error GoTo 0
+
+    ' Normalize line endings to vbLf
+    csvData = Replace(csvData, vbCrLf, vbLf)
+    csvData = Replace(csvData, vbCr, vbLf)
+
+    ' Split the CSV data into lines
+    lines = Split(csvData, vbLf)
+
+    ' Loop through each line and write to Excel
+    For i = LBound(lines) To UBound(lines)
+        line = lines(i)
+        If line <> "" Then
+            cells = Split(line, ",")
+            For j = LBound(cells) To UBound(cells)
+                ws.cells(i + 1, j + 1).Value = cells(j)
+            Next j
+        End If
+    Next i
+End Sub
+
