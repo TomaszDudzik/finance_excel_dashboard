@@ -1,0 +1,56 @@
+Sub RunPythonScript()
+    Dim objShell As Object
+    Dim pythonExe As String
+    Dim scriptPath As String
+
+    ' Set the path to the Python executable and script
+    pythonExe = "C:\Users\dudzi\AppData\Local\Programs\Python\Python311\python.exe"
+    scriptPath = "C:\Users\dudzi\OneDrive\Python\excel_python\excel.py"
+
+    ' Create a new shell object to run the script
+    Set objShell = VBA.CreateObject("WScript.Shell")
+
+    ' Run the Python script
+    objShell.Run pythonExe & " " & scriptPath
+
+    WriteCSVToExcel
+
+    ' Clean up
+    Set objShell = Nothing
+End Sub
+
+' Function to write the CSV data to Excel
+Sub WriteCSVToExcel(ByVal csvData As String)
+    Dim lines As Variant
+    Dim i As Integer, j As Integer
+    Dim line As String
+    Dim cells As Variant
+    Dim ws As Worksheet
+
+    ' Create or get the worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Sheets(sheetName)
+    If ws Is Nothing Then
+        Set ws = ThisWorkbook.Sheets.Add
+        ws.Name = sheetName
+    End If
+    On Error GoTo 0
+
+    ' Normalize line endings to vbLf
+    csvData = Replace(csvData, vbCrLf, vbLf)
+    csvData = Replace(csvData, vbCr, vbLf)
+
+    ' Split the CSV data into lines
+    lines = Split(csvData, vbLf)
+
+    ' Loop through each line and write to Excel
+    For i = LBound(lines) To UBound(lines)
+        line = lines(i)
+        If line <> "" Then
+            cells = Split(line, ",")
+            For j = LBound(cells) To UBound(cells)
+                ws.cells(i + 1, j + 1).Value = cells(j)
+            Next j
+        End If
+    Next i
+End Sub
